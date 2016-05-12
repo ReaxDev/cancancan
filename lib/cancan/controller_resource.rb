@@ -8,8 +8,11 @@ module CanCan
       resource_name = args.first
       before_action_method = before_callback_name(options)
       controller_class.send(before_action_method, options.slice(:only, :except, :if, :unless)) do |controller|
-        controller.class.cancan_resource_class
-                  .new(controller, resource_name, options.except(:only, :except, :if, :unless)).send(method)
+        controller_resource = controller.class.cancan_resource_class.new(controller, resource_name, options.except(:only, :except, :if, :unless)).tap do |c|
+          c.send(method)
+        end
+
+        controller.instance_variable_set :@cancan_controller_resource, controller_resource
       end
     end
 
@@ -62,6 +65,19 @@ module CanCan
       options == {} ||
         options[:except] && !action_exists_in?(options[:except]) ||
         action_exists_in?(options[:only])
+    end
+
+    def resource_instance
+      @controller.instance_variable_get("@#{instance_name}") if load_instance?
+    end
+
+    def collection_instance
+      @controller.instance_variable_get("@#{instance_name.to_s.pluralize}")
+    end
+
+    # The object to load this resource through.
+    def parent_resource
+      parent_name && fetch_parent(parent_name)
     end
 
     protected
@@ -179,16 +195,8 @@ module CanCan
       @controller.instance_variable_set("@#{instance_name}", instance)
     end
 
-    def resource_instance
-      @controller.instance_variable_get("@#{instance_name}") if load_instance?
-    end
-
     def collection_instance=(instance)
       @controller.instance_variable_set("@#{instance_name.to_s.pluralize}", instance)
-    end
-
-    def collection_instance
-      @controller.instance_variable_get("@#{instance_name.to_s.pluralize}")
     end
 
     # The object that methods (such as "find", "new" or "build") are called on.
@@ -226,11 +234,6 @@ module CanCan
 
     def parent_name
       @options[:through] && [@options[:through]].flatten.detect { |i| fetch_parent(i) }
-    end
-
-    # The object to load this resource through.
-    def parent_resource
-      parent_name && fetch_parent(parent_name)
     end
 
     def fetch_parent(name)
